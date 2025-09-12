@@ -6,8 +6,25 @@ import (
 	"io"
 	"net/http"
 	"planner/db"
+	"planner/repeater"
+	"strconv"
 	"time"
 )
+
+func getIDFromRequest(r *http.Request) (int, error) {
+	id := r.FormValue("id")
+
+	if id == "" {
+		return 0, errors.New("Не указан идентификатор")
+	} else {
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			return 0, errors.New("Некорректный формат id")
+		} else {
+			return i, nil
+		}
+	}
+}
 
 func validateTask(r *http.Request) (*db.Task, error) {
 	var task db.Task
@@ -62,25 +79,25 @@ func checkDate(task *db.Task) error {
 	now := time.Now()
 
 	if len(task.Date) == 0 {
-		task.Date = time.Now().Format("20060102")
+		task.Date = time.Now().Format(repeater.DateFormat)
 	}
 
-	date, err := time.Parse("20060102", task.Date)
+	date, err := time.Parse(repeater.DateFormat, task.Date)
 	if err != nil {
 		return errors.New("couldn't parse date")
 	}
 
 	var nextDate string
 	if len(task.Repeat) != 0 {
-		nextDate, err = db.GetNextDate(now, task.Date, task.Repeat)
+		nextDate, err = repeater.GetNextDate(now, task.Date, task.Repeat)
 		if err != nil {
 			return errors.New("error getting next date")
 		}
 	}
 
-	if db.AfterNow(now, date) {
+	if repeater.AfterNow(now, date) {
 		if len(task.Repeat) == 0 {
-			task.Date = now.Format("20060102")
+			task.Date = now.Format(repeater.DateFormat)
 		} else {
 			task.Date = nextDate
 		}

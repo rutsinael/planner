@@ -5,7 +5,6 @@ import (
 	"fmt"
 	_ "modernc.org/sqlite"
 	"os"
-	"time"
 )
 
 var db *sql.DB
@@ -34,31 +33,6 @@ func Init(dbFile string) error {
 	}
 
 	return err
-}
-
-func DoneRule(id int) {
-	var task Task
-	rule := db.QueryRow("SELECT * FROM scheduler WHERE id=$1", id)
-	err := rule.Scan(&task)
-
-	if err != nil {
-		return
-	}
-
-	if task.Repeat == "" {
-		_, err = db.Exec("DELETE from scheduler WHERE id=$1", id)
-		if err != nil {
-			return
-		}
-	} else {
-		newDate, err := GetNextDate(time.Now(), task.Date, task.Repeat)
-		if err != nil {
-			return
-		}
-
-		_, err = db.Exec("UPDATE scheduler SET date=$1 WHERE id=$1", newDate, id)
-	}
-
 }
 
 func AddTask(task *Task) (int64, error) {

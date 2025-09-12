@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"os"
 	"planner/db"
 	"planner/server"
@@ -18,9 +17,4 @@ func main() {
 	}
 
 	server.Run()
-
-	if err = http.ListenAndServe(":7540", nil); err != nil {
-		logger.Fatal("Error while server start: ", err)
-	}
-
 }

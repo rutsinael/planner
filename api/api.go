@@ -3,17 +3,23 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"planner/db"
-	"strconv"
+	"planner/repeater"
 	"time"
 )
 
-func Init() {
-	http.HandleFunc("/api/nextdate", nextDayHandler)
-	http.HandleFunc("/api/task", taskHandler)
-	http.HandleFunc("/api/tasks", getTasksHandler)
-	http.HandleFunc("/api/task/done", taskDoneHandler)
+func Init(r *chi.Mux) {
+	r.Get("/api/nextdate", nextDayHandler)
+
+	r.Get("/api/task", getTaskHandler)
+	r.Post("/api/task", addTaskHandler)
+	r.Put("/api/task", updateTaskHandler)
+	r.Delete("/api/task", deleteTaskHandler)
+
+	r.Get("/api/tasks", getTasksHandler)
+	r.Post("/api/task/done", taskDoneHandler)
 }
 
 func writeJson(w http.ResponseWriter, data any) {
@@ -24,169 +30,128 @@ func writeJson(w http.ResponseWriter, data any) {
 	}
 }
 
+func writeError(w http.ResponseWriter, errMessage string) {
+	w.WriteHeader(http.StatusBadRequest)
+	writeJson(w, ErrorResponse{Error: &errMessage})
+}
+
+func writeEmptySuccessResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusOK)
+	writeJson(w, map[string]any{})
+}
+
 func taskDoneHandler(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method == http.MethodPost {
-		id := r.FormValue("id")
-		if id == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			errMessage := "Не указан идентификатор"
-			writeJson(w, PostTaskResponse{Error: &errMessage})
-		} else {
-			i, err := strconv.Atoi(id)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				errMessage := "Некорректный формат id"
-				writeJson(w, PostTaskResponse{Error: &errMessage})
-			} else {
-				task, err := db.GetTaskByID(i)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					errMessage := "Задача не найдена"
-					writeJson(w, PostTaskResponse{Error: &errMessage})
-				} else {
-					if task.Repeat != "" {
-						nextDate, err := db.GetNextDate(time.Now(), task.Date, task.Repeat)
-						if err != nil {
-							w.WriteHeader(http.StatusBadRequest)
-							errMessage := err.Error()
-							writeJson(w, PostTaskResponse{Error: &errMessage})
-						} else {
-							newTask := db.Task{
-								ID:      task.ID,
-								Date:    nextDate,
-								Repeat:  task.Repeat,
-								Comment: task.Comment,
-								Title:   task.Title,
-							}
-							db.UpdateTask(&newTask)
-							w.WriteHeader(http.StatusOK)
-							writeJson(w, map[string]any{})
-						}
-
-					} else {
-						db.DeleteTask(i)
-						w.WriteHeader(http.StatusOK)
-						writeJson(w, map[string]any{})
-					}
-				}
-			}
-		}
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, err.Error())
+		return
 	}
+
+	task, err := db.GetTaskByID(id)
+	if err != nil {
+		writeError(w, "Задача не найдена")
+		return
+	}
+
+	if task.Repeat != "" {
+		nextDate, err := repeater.GetNextDate(time.Now(), task.Date, task.Repeat)
+		if err != nil {
+			writeError(w, err.Error())
+			return
+		}
+		db.UpdateTask(&db.Task{
+			ID:      task.ID,
+			Date:    nextDate,
+			Repeat:  task.Repeat,
+			Comment: task.Comment,
+			Title:   task.Title,
+		})
+
+	} else {
+		db.DeleteTask(id)
+	}
+	writeEmptySuccessResponse(w)
 }
 
 func getTasksHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		tasks, err := db.GetTasks(tasksMax)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			errMessage := err.Error()
-			writeJson(w, GetTasksResponse{
-				Error: &errMessage,
-			})
-		} else {
-			w.WriteHeader(http.StatusOK)
-			writeJson(w, GetTasksResponse{
-				Tasks: &tasks,
-			})
-		}
+
+	tasks, err := db.GetTasks(tasksMax)
+	if err != nil {
+		writeError(w, err.Error())
+		return
 	}
+	w.WriteHeader(http.StatusOK)
+	writeJson(w, GetTasksResponse{
+		Tasks: &tasks,
+	})
 }
 
-func taskHandler(w http.ResponseWriter, r *http.Request) {
-
-	switch r.Method {
-	case http.MethodPost:
-		id, err := addTask(r)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			errMessage := err.Error()
-			writeJson(w, PostTaskResponse{Error: &errMessage})
-		} else {
-			w.WriteHeader(http.StatusOK)
-			writeJson(w, PostTaskResponse{ID: &id})
-		}
-
-	case http.MethodGet:
-		id := r.FormValue("id")
-
-		if id == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			errMessage := "Не указан идентификатор"
-			writeJson(w, PostTaskResponse{Error: &errMessage})
-		} else {
-			i, err := strconv.Atoi(id)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				errMessage := "Некорректный формат id"
-				writeJson(w, PostTaskResponse{Error: &errMessage})
-			} else {
-				task, err := db.GetTaskByID(i)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					errMessage := "Задача не найдена"
-					writeJson(w, PostTaskResponse{Error: &errMessage})
-				} else {
-					w.WriteHeader(http.StatusOK)
-					writeJson(w, task)
-				}
-			}
-		}
-	case http.MethodPut:
-		err := updateTask(r)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			errMessage := err.Error()
-			writeJson(w, PostTaskResponse{Error: &errMessage})
-		} else {
-			w.WriteHeader(http.StatusOK)
-			writeJson(w, map[string]any{})
-		}
-	case http.MethodDelete:
-		id := r.FormValue("id")
-		if id == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			errMessage := "Не указан идентификатор"
-			writeJson(w, PostTaskResponse{Error: &errMessage})
-		} else {
-			i, err := strconv.Atoi(id)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				errMessage := "Некорректный формат id"
-				writeJson(w, PostTaskResponse{Error: &errMessage})
-			} else {
-				err := db.DeleteTask(i)
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					errMessage := "Задача не найдена"
-					writeJson(w, PostTaskResponse{Error: &errMessage})
-				} else {
-					w.WriteHeader(http.StatusOK)
-					writeJson(w, map[string]any{})
-				}
-			}
-		}
+func getTaskHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, err.Error())
+		return
 	}
+	task, err := db.GetTaskByID(id)
+	if err != nil {
+		writeError(w, "Задача не найдена")
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	writeJson(w, task)
 }
 
-func nextDayHandler(writer http.ResponseWriter, request *http.Request) {
-
-	if request.Method == http.MethodGet {
-		now := request.FormValue("now")
-		date := request.FormValue("date")
-		repeat := request.FormValue("repeat")
-
-		timeNow, _ := time.Parse("20060102", now)
-
-		nextDate, err := db.GetNextDate(timeNow, date, repeat)
-		if err != nil {
-			return
-		}
-
-		fmt.Fprintf(writer, nextDate)
-
-	} else if request.Method == http.MethodPost {
-
+func addTaskHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := addTask(r)
+	if err != nil {
+		writeError(w, err.Error())
+		return
 	}
+	w.WriteHeader(http.StatusOK)
+	writeJson(w, PostTaskResponse{ID: &id})
+}
+
+func updateTaskHandler(w http.ResponseWriter, r *http.Request) {
+	err := updateTask(r)
+	if err != nil {
+		writeError(w, err.Error())
+		return
+	}
+	writeEmptySuccessResponse(w)
+}
+
+func deleteTaskHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, err.Error())
+		return
+	}
+	err = db.DeleteTask(id)
+	if err != nil {
+		writeError(w, err.Error())
+		return
+	}
+	writeEmptySuccessResponse(w)
+}
+
+func nextDayHandler(w http.ResponseWriter, request *http.Request) {
+	now := request.FormValue("now")
+	date := request.FormValue("date")
+	repeat := request.FormValue("repeat")
+
+	var timeNow time.Time
+
+	if len(now) > 0 {
+		timeNow, _ = time.Parse(repeater.DateFormat, now)
+	} else {
+		timeNow = time.Now()
+	}
+
+	nextDate, err := repeater.GetNextDate(timeNow, date, repeat)
+	if err != nil {
+		writeError(w, err.Error())
+		return
+	}
+
+	fmt.Fprintf(w, nextDate)
 }
