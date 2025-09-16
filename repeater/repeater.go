@@ -1,4 +1,4 @@
-package db
+package repeater
 
 import (
 	"errors"
@@ -8,14 +8,20 @@ import (
 	"time"
 )
 
+const DateFormat = "20060102"
+
 func GetNextDate(now time.Time, dstart string, repeat string) (string, error) {
 
-	date, _ := time.Parse("20060102", dstart)
+	date, err := time.Parse(DateFormat, dstart)
 
-	spitedRule := strings.Split(repeat, " ")
-	if len(spitedRule) == 0 {
+	if err != nil {
+		return "", err
+	}
+
+	if len(repeat) == 0 {
 		return "", errors.New("no spitted rule")
 	}
+	spitedRule := strings.Split(repeat, " ")
 
 	var validationError error
 
@@ -32,7 +38,7 @@ func GetNextDate(now time.Time, dstart string, repeat string) (string, error) {
 		return "", errors.New("unknown rule")
 	}
 
-	convertedDate := date.Format("20060102")
+	convertedDate := date.Format(DateFormat)
 	return convertedDate, validationError
 }
 
