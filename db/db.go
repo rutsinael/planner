@@ -60,7 +60,7 @@ func GetTaskByID(id int) (Task, error) {
 func GetTasks(max int) ([]Task, error) {
 	var tasks = make([]Task, 0)
 
-	rows, err := db.Query("SELECT * FROM scheduler ORDER BY date DESC LIMIT $1", max)
+	rows, err := db.Query("SELECT * FROM scheduler ORDER BY date ASC LIMIT $1", max)
 	if err != nil {
 		return tasks, err
 	}
